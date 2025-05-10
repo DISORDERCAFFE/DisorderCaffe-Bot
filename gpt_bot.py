@@ -1,6 +1,8 @@
 import os
+import asyncio
 from telegram import Update, ReplyKeyboardMarkup
 from telegram.ext import Application, CommandHandler, MessageHandler, filters, CallbackContext
+from telegram.error import Conflict
 from dotenv import load_dotenv
 from music import search_and_send_song
 from deepseek import ask_deepseek
@@ -20,7 +22,7 @@ KEYBOARD = [
 async def start(update: Update, context: CallbackContext):
     keyboard = ReplyKeyboardMarkup(KEYBOARD, resize_keyboard=True)
     await update.message.reply_text(
-        "🤖 Привет! Я бот от DISORDER CAFFE c музыкой И Восточными Мудрецами. Выбери действие:",
+        "🤖 Привет! Я бот от DISORDER CAFFE c музыкой и Восточными Мудрецами. Выбери действие:",
         reply_markup=keyboard
     )
 
@@ -34,13 +36,13 @@ async def handle_message(update: Update, context: CallbackContext):
     elif text == "⚙️ Возможности":
         await update.message.reply_text(
             "⚡️ Я умею:\n"
-            "- Отвечать на вопросы через Восточных Мудрецов (кнопка ❓)\n"
+            "- Отвечать на вопросы с Восточными Мудрецами (кнопка ❓)\n"
             "- Искать и присылать музыку (кнопка 🎵)\n"
             "- Передавать сообщения в Кафешку (кнопка 📩)"
         )
 
     elif text == "❓ Задать вопрос":
-        await update.message.reply_text("Напиши свой вопрос, и я толкну его Восточным Мудрецам.")
+        await update.message.reply_text("Напиши свой вопрос, и я загоню его Восточным Мудрецам.")
         context.user_data["awaiting_question"] = True
 
     elif text == "🎵 Найти песню":
@@ -48,13 +50,12 @@ async def handle_message(update: Update, context: CallbackContext):
         context.user_data["awaiting_song"] = True
 
     elif text == "📩 Написать в Кафешку":
-        await update.message.reply_text("Напиши сообщение, и я загоню его на Tokyo:")
+        await update.message.reply_text("Напиши сообщение, и я толкну его на Tokyo:")
         context.user_data["awaiting_feedback"] = True
 
-    # Обработка ввода после нажатия кнопок
     elif context.user_data.get("awaiting_question"):
         answer = await ask_deepseek(text)
-        await update.message.reply_text(f"🤖 Ответ Мудрецов:\n\n{answer}")
+        await update.message.reply_text(f"🤖 Мудрецы ответили:\n\n{answer}")
         context.user_data["awaiting_question"] = False
 
     elif context.user_data.get("awaiting_song"):
@@ -66,12 +67,23 @@ async def handle_message(update: Update, context: CallbackContext):
         await update.message.reply_text("✅ Сообщение отправлено!")
         context.user_data["awaiting_feedback"] = False
 
-def main():
-    app = Application.builder().token(BOT_TOKEN).build()
-    app.add_handler(CommandHandler("start", start))
-    app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-    print("Бот запущен...")
-    app.run_polling()
+async def run_bot():
+    """Функция с обработкой конфликтов"""
+    while True:
+        try:
+            app = Application.builder().token(BOT_TOKEN).build()
+            app.add_handler(CommandHandler("start", start))
+            app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
+            
+            print("🔄 Бот запущен...")
+            await app.run_polling()
+            
+        except Conflict:
+            print("⚠️ Обнаружен конфликт! Перезапуск через 5 секунд...")
+            await asyncio.sleep(5)
+        except Exception as e:
+            print(f"🚨 Критическая ошибка: {e}")
+            await asyncio.sleep(10)
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(run_bot())
