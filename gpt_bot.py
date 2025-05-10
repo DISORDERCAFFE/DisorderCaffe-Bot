@@ -1,89 +1,141 @@
 import os
 import asyncio
 from telegram import Update, ReplyKeyboardMarkup
-from telegram.ext import Application, CommandHandler, MessageHandler, filters, CallbackContext
-from telegram.error import Conflict
+from telegram.ext import (
+    Application,
+    CommandHandler,
+    MessageHandler,
+    filters,
+    CallbackContext,
+)
+from telegram.error import Conflict, NetworkError, TelegramError
 from dotenv import load_dotenv
 from music import search_and_send_song
 from deepseek import ask_deepseek
 from feedback import send_to_admin
 
+# Загрузка переменных окружения
 load_dotenv()
-
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 ADMIN_ID = os.getenv("ADMIN_ID")
 
+# Клавиатура
 KEYBOARD = [
     ["📜 Правила", "⚙️ Возможности"],
     ["❓ Задать вопрос", "🎵 Найти песню"],
     ["📩 Написать в Кафешку"]
 ]
 
-async def start(update: Update, context: CallbackContext):
-    keyboard = ReplyKeyboardMarkup(KEYBOARD, resize_keyboard=True)
-    await update.message.reply_text(
-        "🤖 Привет! Я бот от DISORDER CAFFE c музыкой и Восточными Мудрецами. Выбери действие:",
-        reply_markup=keyboard
-    )
+class TelegramBot:
+    def __init__(self):
+        self.app = None
+        self.shutdown_event = asyncio.Event()
 
-async def handle_message(update: Update, context: CallbackContext):
-    text = update.message.text
-    user_id = update.message.from_user.id
-
-    if text == "📜 Правила":
-        await update.message.reply_text("📌 Правила:\n1. Не вальтуй\n2. Не сноси заборы")
-
-    elif text == "⚙️ Возможности":
+    async def start(self, update: Update, context: CallbackContext):
+        """Обработчик команды /start"""
+        keyboard = ReplyKeyboardMarkup(KEYBOARD, resize_keyboard=True)
         await update.message.reply_text(
-            "⚡️ Я умею:\n"
-            "- Отвечать на вопросы с Восточными Мудрецами (кнопка ❓)\n"
-            "- Искать и присылать музыку (кнопка 🎵)\n"
-            "- Передавать сообщения в Кафешку (кнопка 📩)"
+            "🤖 Привет! Я бот от DISORDER CAFFE c музыкой и Восточными Мудрецами. Выбери действие:",
+            reply_markup=keyboard
         )
 
-    elif text == "❓ Задать вопрос":
-        await update.message.reply_text("Напиши свой вопрос, и я загоню его Восточным Мудрецам.")
-        context.user_data["awaiting_question"] = True
+    async def handle_message(self, update: Update, context: CallbackContext):
+        """Обработка всех текстовых сообщений"""
+        text = update.message.text
 
-    elif text == "🎵 Найти песню":
-        await update.message.reply_text("Введи название песни или исполнителя:")
-        context.user_data["awaiting_song"] = True
+        if text == "📜 Правила":
+            await update.message.reply_text("📌 Правила:\n1. Не вальтуй\n2. Не сноси заборы")
 
-    elif text == "📩 Написать в Кафешку":
-        await update.message.reply_text("Напиши сообщение, и я толкну его на Tokyo:")
-        context.user_data["awaiting_feedback"] = True
+        elif text == "⚙️ Возможности":
+            await update.message.reply_text(
+                "⚡️ Я умею:\n"
+                "- Отвечать на вопросы серез Мудрецов\n"
+                "- Искать и присылать музыку\n"
+                "- Передавать сообщения в Кафешку"
+            )
 
-    elif context.user_data.get("awaiting_question"):
-        answer = await ask_deepseek(text)
-        await update.message.reply_text(f"🤖 Мудрецы ответили:\n\n{answer}")
-        context.user_data["awaiting_question"] = False
+        elif text == "❓ Задать вопрос":
+            await update.message.reply_text("Напиши свой вопрос я загоню его на Восточных Мудрецов:")
+            context.user_data["awaiting_question"] = True
 
-    elif context.user_data.get("awaiting_song"):
-        await search_and_send_song(update, context)
-        context.user_data["awaiting_song"] = False
+        elif text == "🎵 Найти песню":
+            await update.message.reply_text("Введи название песни:")
+            context.user_data["awaiting_song"] = True
 
-    elif context.user_data.get("awaiting_feedback"):
-        await send_to_admin(update, context, ADMIN_ID)
-        await update.message.reply_text("✅ Сообщение отправлено!")
-        context.user_data["awaiting_feedback"] = False
+        elif text == "📩 Написать в Кафешку":
+            await update.message.reply_text("Напиши сообщение я толкну его на Tokyo:")
+            context.user_data["awaiting_feedback"] = True
 
-async def run_bot():
-    """Функция с обработкой конфликтов"""
-    while True:
-        try:
-            app = Application.builder().token(BOT_TOKEN).build()
-            app.add_handler(CommandHandler("start", start))
-            app.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
-            
-            print("🔄 Бот запущен...")
-            await app.run_polling()
-            
-        except Conflict:
-            print("⚠️ Обнаружен конфликт! Перезапуск через 5 секунд...")
-            await asyncio.sleep(5)
-        except Exception as e:
-            print(f"🚨 Критическая ошибка: {e}")
-            await asyncio.sleep(10)
+        elif context.user_data.get("awaiting_question"):
+            answer = await ask_deepseek(text)
+            await update.message.reply_text(f"🤖 Мудрецы ответили:\n\n{answer}")
+            context.user_data["awaiting_question"] = False
+
+        elif context.user_data.get("awaiting_song"):
+            await search_and_send_song(update, context)
+            context.user_data["awaiting_song"] = False
+
+        elif context.user_data.get("awaiting_feedback"):
+            await send_to_admin(update, context, ADMIN_ID)
+            await update.message.reply_text("✅ Сообщение отправлено!")
+            context.user_data["awaiting_feedback"] = False
+
+    async def run(self):
+        """Основной цикл работы бота"""
+        while not self.shutdown_event.is_set():
+            try:
+                # Инициализация бота
+                self.app = Application.builder().token(BOT_TOKEN).build()
+                
+                # Регистрация обработчиков
+                self.app.add_handler(CommandHandler("start", self.start))
+                self.app.add_handler(
+                    MessageHandler(filters.TEXT & ~filters.COMMAND, self.handle_message)
+                )
+
+                print("🔄 Бот запущен и работает...")
+                await self.app.run_polling(drop_pending_updates=True)
+
+            except (Conflict, NetworkError) as e:
+                print(f"⚠️ Ошибка подключения: {e}. Перезапуск через 5 секунд...")
+                await self.safe_shutdown()
+                await asyncio.sleep(5)
+
+            except TelegramError as e:
+                print(f"🚨 Ошибка Telegram: {e}. Перезапуск через 10 секунд...")
+                await self.safe_shutdown()
+                await asyncio.sleep(10)
+
+            except Exception as e:
+                print(f"💥 Неожиданная ошибка: {e}. Перезапуск через 15 секунд...")
+                await self.safe_shutdown()
+                await asyncio.sleep(15)
+
+    async def safe_shutdown(self):
+        """Безопасное завершение работы"""
+        if self.app:
+            try:
+                await self.app.shutdown()
+                await self.app.updater.stop()
+            except:
+                pass
+            finally:
+                self.app = None
+
+    async def stop(self):
+        """Остановка бота"""
+        self.shutdown_event.set()
+        await self.safe_shutdown()
+
+async def main():
+    bot = TelegramBot()
+    try:
+        await bot.run()
+    except asyncio.CancelledError:
+        await bot.stop()
 
 if __name__ == "__main__":
-    asyncio.run(run_bot())
+    try:
+        asyncio.run(main())
+    except KeyboardInterrupt:
+        print("\nБот остановлен")
